@@ -30,21 +30,20 @@ architecture rtl of COBSEncoder is
       icnt         : unsigned(7 downto 0);
       newCnt       : unsigned(7 downto 0);
       vldNewCnt    : std_logic;
+      eof          : std_logic_vector(1 downto 0);
    end record RegType;
 
    constant REG_INIT_C      : RegType := (
       ocnt         => (others => '0'),
-      icnt         => (others => '0'),
+      icnt         => to_unsigned(1, 8),
       newCnt       => (others => '0'),
-      vldNewCnt    => '0'
+      vldNewCnt    => '0',
+      eof          => "00"
    );
 
    signal  r                : RegType := REG_INIT_C;
    signal  rin              : RegType;
-   signal  vldOutLoc        : std_logic;
-   signal  datOutLoc        : std_logic_vector(7 downto 0);
-   signal  rdyOutLoc        : std_logic;
-   signal  lstOutLoc        : std_logic;
+   signal  rdyInpLoc        : std_logic;
 
    signal  stitchInp        : std_logic_vector(8 downto 0);
    signal  stitchOut        : std_logic_vector(8 downto 0);
@@ -52,69 +51,29 @@ architecture rtl of COBSEncoder is
    signal  fifoVldInp       : std_logic;
    signal  fifoRdyInp       : std_logic;
    signal  fifoDatInp       : std_logic_vector(7 downto 0);
-   signal  fifoVldOut       : std_logic;
+   signal  fifoVldOut       : std_logic := '0';
    signal  fifoRdyOut       : std_logic;
    signal  fifoDatOut       : std_logic_vector(7 downto 0);
-
+   signal  fifoFull         : std_logic;
+   signal  fifoEmpty        : std_logic;
 
    constant EOF_C           : std_logic_vector(7 downto 0) := x"00";
-   constant CHAIN_C         : std_logic_vector(7 downto 0) := x"FF";
+   constant EOF_CNT_C       : unsigned        (7 downto 0) := x"00";
+   constant CHAIN_C         : unsigned        (7 downto 0) := x"FF";
 
-   shared variable memory   : Slv8Array(0 to 2**LD_FIFO_DEPTH_C - 1);
-   signal memoryRen         : std_logic;
-   signal memoryWen         : std_logic;
+   function to_std_logic(constant x : boolean) return std_logic is
+   begin
+      if ( x ) then return '1'; else return '0'; end if;
+   end function to_std_logic;
 
-   signal wptr              : signed(LD_FIFO_DEPTH_C downto 0) := (others => '0');
-   signal rptr              : signed(LD_FIFO_DEPTH_C downto 0) := (others => '0');
-
+   function ite(constant x : boolean; constant t,f : std_logic) return std_logic is
+   begin
+      if ( x ) then return t; else return f; end if;
+   end function ite;
 
 begin
 
-   P_MEM_RD : process ( clk ) is
-   begin
-      if ( rising_edge( clk ) ) then
-	 if ( memoryRen = '1' ) then
-            fifoDatOut <= memory( to_integer(unsigned(rptr(LD_FIFO_DEPTH_C - 1 downto 0))) );
-	 end if;
-      end if;
-   end process P_MEM_RD;
-
-   P_MEM_WR : process ( clk ) is
-   begin
-      if ( rising_edge( clk ) ) then
-	 if ( memoryWen = '1' ) then
-            memory( to_integer(unsigned(wptr(LD_FIFO_DEPTH_C - 1 downto 0))) ) := fifoDatInp;
-	 end if;
-      end if;
-   end process P_MEM_WR;
-
-   memoryRen <= not fifoVldOut or fifoRdyOut;
-   memoryWen <= fifoVldInp and fifoRdyInp;
-
-   fifoRdyInp <= '0' when (wptr - rptr) < 0 else '1'; -- full
-
-   P_FIFO_RD : process ( clk ) is
-   begin
-      if ( rising_edge( clk ) ) then
-         if ( rst = '1' ) then
-            rptr       <= (others => '0');
-            fifoVldOut <= '0';
-         else
-            if ( memoryRen = '1' ) then
-               if ( wptr /= rptr ) then
-                  fifoVldOut <= '1';
-                  rptr       <= rptr + 1;
-               else
-                  fifoVldOut <= '0';
-               end if;
-            end if;
-         end if;
-      end if;
-   end process P_FIFO_RD;
-
-   lstoutLoc  <= '1' when datInp = EOF_C else '0';
-
-   P_COMB : process ( r ) is
+   P_COMB : process ( r, fifoDatOut, fifoVldOut, fifoRdyOut, rdyOut, vldInp, datInp, fifoRdyInp, rdyInpLoc ) is
       variable v : RegType;
    begin
       v         := r;
@@ -123,39 +82,69 @@ begin
       vldOut     <= '0';
       datOut     <= fifoDatOut;
 
-      if ( r.ocnt /= 0 ) then
+      -- back-end processing: get run-length out of the mailbox; append data
+      if ( r.ocnt = 0 ) then
+         -- icnt/ocnt == 0 serve as frame markers
+
+         -- if mailbox data are valid, append ther run-length (or EOF marker
+         -- if newCnt = 0
+         vldOut     <= r.vldNewCnt;
+         datOut     <= std_logic_vector( r.newCnt );
+         if ( (r.vldNewCnt and rdyOut) = '1' ) then
+            if ( r.newCnt /= 0 ) then
+               v.ocnt       := r.newCnt - 1;
+            -- else the count can be left alone; is already 0
+            end if;
+            v.vldNewCnt := '0';
+         end if;
+      else
          fifoRdyOut <= rdyOut;
          vldOut     <= fifoVldOut;
          if ( (rdyOut and fifoVldOut) = '1' ) then
             v.ocnt := r.ocnt - 1;
          end if;
-      else
-         vldOut     <= r.vldNewCnt;
-         datOut     <= std_logic_vector( r.newCnt );
-         if ( (r.vldNewCnt and rdyOut) = '1' ) then
-            v.ocnt       := r.newCnt;
-            v.vldNewCnt := '0';
-         end if;
       end if;
 
       fifoVldInp <= vldInp;
       fifoDatInp <= datInp;
-      rdyInp     <= fifoRdyInp;
+      rdyInpLoc  <= fifoRdyInp;
 
-      if ( vldInp = '1' ) then
-         if ( datInp = EOF_C or r.icnt = unsigned(CHAIN_C)  ) then
+      if ( (vldInp  = '1') or (r.eof /= "00") ) then
+         if ( (datInp = EOF_C) or (r.icnt = CHAIN_C) or (r.eof /= "00") ) then
             fifoVldInp <= '0';
-   	    rdyInp     <= not v.vldNewCnt;
+	    -- consume input unless it's a long run or we need to append EOF
+            if ( (r.icnt = CHAIN_C) or (r.eof /= "00") ) then
+               rdyInpLoc <= '0';
+            else
+               rdyInpLoc <= not v.vldNewCnt;
+            end if;
 	    if ( v.vldNewCnt = '0' ) then
                v.newCnt    := r.icnt;
-	       v.icnt      := to_unsigned(1, v.icnt'length);
                v.vldNewCnt := '1';
+               v.icnt      := to_unsigned(1, v.icnt'length);
+               -- Note: if lstInp is set when we consume a 00 byte then
+               -- we already send the icnt to the mail box in this cycle
+               -- and therefore don't set the EOF flag.
+               -- An ordinary byte with lstInp set is consumed into
+               -- the FIFO and we have to subsequently send the icnt
+               -- as well as the EOF marker to the mailbox. The 'eof'
+               -- flag marks this necessary extra step.
+               v.eof       := '0' & r.eof(1);
+               if ( r.eof(1) = '1' ) then
+                  v.icnt      := to_unsigned(0, v.icnt'length);
+               end if;
+               if ( (lstInp and rdyInpLoc) = '1' ) then
+                  -- rdyInpLoc implies r.eof = "00"
+                  v.eof(1)    := '1';
+               end if;
             end if;
          elsif ( fifoRdyInp = '1' ) then
-            v.icnt := r.icnt + 1;
+            v.icnt   := r.icnt + 1;
+            v.eof(1) := lstInp;
          end if;
       end if;
       rin        <= v;
+      rdyInp     <= rdyInpLoc;
    end process P_COMB;
 
    P_SEQ : process ( clk ) is
@@ -168,5 +157,26 @@ begin
          end if;
       end if;
    end process P_SEQ;
+
+   U_FIFO : entity work.COBSFifo
+      generic map (
+         LD_FIFO_DEPTH_G => LD_FIFO_DEPTH_C,
+         DATA_WIDTH_G    => 8
+      )
+      port map (
+         clk             => clk,
+         rst             => rst,
+
+         wrEna           => fifoVldInp,
+         datInp          => fifoDatInp,
+         full            => fifoFull,
+
+         rdEna           => fifoRdyOut,
+         datOut          => fifoDatOut,
+         empty           => fifoEmpty
+      );
+
+   fifoVldOut <= not fifoEmpty;
+   fifoRdyInp <= not fifoFull;
 
 end architecture rtl;

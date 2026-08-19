@@ -22,11 +22,17 @@ architecture rtl of COBSDecoder is
    type RegType is record
       cnt          : unsigned(7 downto 0);
       sendZero     : std_logic;
+      dat          : std_logic_vector(7 downto 0);
+      vld          : std_logic;
+      lst          : std_logic;
    end record RegType;
 
    constant REG_INIT_C      : RegType := (
       cnt          => (others => '0'),
-      sendZero     => '0'
+      sendZero     => '0',
+      dat          => (others => '0'),
+      vld          => '0',
+      lst          => '0'
    );
 
    signal  r                : RegType := REG_INIT_C;
@@ -44,28 +50,39 @@ architecture rtl of COBSDecoder is
 
 begin
 
-   lstoutLoc <= '1' when datInp = EOF_C else '0';
+   lstOutLoc <= r.lst;
+   vldOutLoc <= r.vld;
+   datOutLoc <= r.dat;
 
    P_COMB : process ( r, datInp, vldInp, rdyOutLoc, lstOutLoc ) is
       variable v : RegType;
    begin
       v         := r;
-      vldOutLoc <= vldInp;
-      datOutLoc <= datInp;
-      rdyInp    <= rdyOutLoc;
-      if ( (vldInp and rdyOutLoc) = '1' ) then
-         if ( lstOutLoc = '1' ) then
+
+      if ( (r.vld and rdyOutLoc) = '1' ) then
+         v.vld := '0';
+	 v.lst := '0';
+      end if;
+
+      rdyInp <= not v.vld;
+
+      if ( (vldInp and not v.vld) = '1' ) then
+	 v.dat := datInp;
+	 v.vld := '1';
+         if ( datInp = EOF_C ) then
             v.cnt      := (others => '0');
             v.sendZero := '0';
+            v.vld      := r.sendZero;
+	    v.lst      := r.sendZero;
          elsif ( r.cnt = 0 ) then
-            vldOutLoc  <= r.sendZero;
+            v.vld      := r.sendZero;
             if ( datInp = CHAIN_C ) then
                v.sendZero := '0';
             else
                v.sendZero := '1';
             end if;
             v.cnt      := unsigned(datInp) - 1; -- datInp > 0 since lstOutLoc = '0'
-            datOutLoc  <= (others => '0');
+            v.dat      := (others => '0');
          else
             v.cnt      := r.cnt - 1;
          end if;
