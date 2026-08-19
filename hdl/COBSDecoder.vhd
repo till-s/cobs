@@ -19,10 +19,12 @@ entity COBSDecoder is
 end entity COBSDecoder;
 
 architecture rtl of COBSDecoder is
+
    type RegType is record
       cnt          : unsigned(7 downto 0);
       sendZero     : std_logic;
       dat          : std_logic_vector(7 downto 0);
+      notEmpty     : std_logic;
       vld          : std_logic;
       lst          : std_logic;
    end record RegType;
@@ -31,6 +33,7 @@ architecture rtl of COBSDecoder is
       cnt          => (others => '0'),
       sendZero     => '0',
       dat          => (others => '0'),
+      notEmpty     => '0',
       vld          => '0',
       lst          => '0'
    );
@@ -72,17 +75,20 @@ begin
          if ( datInp = EOF_C ) then
             v.cnt      := (others => '0');
             v.sendZero := '0';
-            v.vld      := r.sendZero;
-	    v.lst      := r.sendZero;
+            v.notEmpty := '0';
+            v.vld      := r.notEmpty;
+	    v.lst      := r.notEmpty;
          elsif ( r.cnt = 0 ) then
             v.vld      := r.sendZero;
             if ( datInp = CHAIN_C ) then
+               -- suppress emitting 00 when cnt drops to zero
                v.sendZero := '0';
             else
                v.sendZero := '1';
             end if;
             v.cnt      := unsigned(datInp) - 1; -- datInp > 0 since lstOutLoc = '0'
             v.dat      := (others => '0');
+            v.notEmpty := '1'; -- at least some nonzero data seen; emit EOF when done
          else
             v.cnt      := r.cnt - 1;
          end if;
