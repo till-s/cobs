@@ -5,7 +5,7 @@ use     ieee.numeric_std.all;
 entity COBSEncoder is
    generic (
       LD_DAT_FIFO_DEPTH_G : positive range 8 to 1000 := 8;
-      -- increasing
+      -- increasing header depth slightly increases throughput
       LD_HDR_FIFO_DEPTH_G : positive                 := 2
    );
    port (
@@ -16,6 +16,14 @@ entity COBSEncoder is
       vldInp       : in  std_logic;
       lstInp       : in  std_logic;
       rdyInp       : out std_logic;
+      -- emit a frame delimiter (waits until internal state is idle);
+      -- this does not interrupt a frame. Useful to sync receivers
+      -- when otherwise nothing is going on.
+      synReq       : in  std_logic := '0';
+      -- 1-cycle pulse to acknowledge the SYNC was sent. User
+      -- should withdraw the synReq after synAck - otherwise
+      -- a flood of EOFs may be caused.
+      synAck       : out std_logic;
 
       datOut       : out std_logic_vector(7 downto 0);
       vldOut       : out std_logic;
@@ -46,6 +54,8 @@ architecture rtl of COBSEncoder is
       hwptr        : HdrFifoIdxType;
       hrptr        : HdrFifoIdxType;
       eof          : std_logic;
+      inhibitSync  : std_logic;
+      synReq       : std_logic;
    end record RegType;
 
    constant REG_INIT_C      : RegType := (
@@ -54,7 +64,9 @@ architecture rtl of COBSEncoder is
       hdrs         => (others => HDR_INIT_C),
       hwptr        => (others => '0'),
       hrptr        => (others => '0'),
-      eof          => '0'
+      eof          => '0',
+      inhibitSync  => '0',
+      synReq       => '0'
    );
 
    signal  r                : RegType := REG_INIT_C;
@@ -84,11 +96,6 @@ architecture rtl of COBSEncoder is
    begin
       if ( x ) then return '1'; else return '0'; end if;
    end function to_std_logic;
-
-   function ite(constant x : boolean; constant t,f : std_logic) return std_logic is
-   begin
-      if ( x ) then return t; else return f; end if;
-   end function ite;
 
    function hdrFifoEmpty(constant x : in RegType) return std_logic is
    begin
@@ -126,39 +133,52 @@ architecture rtl of COBSEncoder is
       x.hwptr := x.hwptr + 1;
    end procedure hdrFifoPush;
 
-
 begin
 
-   P_COMB : process ( r, fifoDatOut, fifoVldOut, fifoVldInp, fifoRdyOut, rdyOut, vldInp, lstInp, datInp, fifoRdyInp, rdyInpLoc ) is
+   P_COMB : process ( r, fifoDatOut, fifoVldOut, fifoVldInp, fifoRdyOut, rdyOut, vldInp, lstInp, datInp, fifoRdyInp, rdyInpLoc, synReq ) is
       variable v                : RegType;
       variable hdrSpaceRequired : natural;
    begin
-      v         := r;
+      v                 := r;
 
       fifoRdyOut        <= '0';
       vldOut            <= '0';
       datOut            <= fifoDatOut;
       hdrSpaceRequired  := 0;
 
+      -- for debugging in simulation
       hdrFifoDbg        <= hdrFifoHead(r).cnt;
       hdrFifoFul        <= hdrFifoFull(r);
 
-      -- back-end processing: get run-length out of the mailbox; append data
-      if ( r.ocnt = 0 ) then
-         -- icnt/ocnt == 0 serve as frame markers
+      -- back-end processing: get run-length out of the fifo; append data
+      if ( r.synReq = '1' ) then
+         -- a SYN request is pending; this could only happen between
+         -- frames; must stall backend until we can honor the request
+         vldOut <= '1';
+         datOut <= EOF_C;
+         synAck <= rdyOut;
+         if ( rdyOut = '1' ) then
+            v.synReq := '0';
+         end if;
+      elsif ( r.ocnt = 0 ) then
+         -- icnt/ocnt == 0 serves as frame markers
 
-         -- if mailbox data are valid, append ther run-length (or EOF marker
-         -- if newCnt = 0
          vldOut     <= not hdrFifoEmpty(r);
          datOut     <= std_logic_vector( hdrFifoHead(r).cnt );
          if ( (not hdrFifoEmpty(r) and rdyOut) = '1' ) then
             if ( hdrFifoHead(r).cnt /= 0 ) then
-               v.ocnt       := hdrFifoHead(r).cnt - 1;
-            -- else the count can be left alone; is already 0
+               v.inhibitSync := '1';
+               v.ocnt        := hdrFifoHead(r).cnt - 1;
+            else
+               -- An EOF was sent; it is safe to send SYNC until
+               -- the next frame starts.
+               -- The count can be left alone; is already 0
+               v.inhibitSync := '0';
             end if;
 	    hdrFifoPop(v);
          end if;
       else
+         -- transfer ocnt items from the data fifo
          fifoRdyOut <= rdyOut;
          vldOut     <= fifoVldOut;
          if ( (rdyOut and fifoVldOut) = '1' ) then
@@ -166,15 +186,27 @@ begin
          end if;
       end if;
 
+      if ( (not v.inhibitSync and not r.inhibitSync) = '1' ) then
+         -- only if we are not about to switch inhibit on or off
+         v.synReq := synReq;
+      end if;
+
+      -- default connection streams into the data fifo
       fifoVldInp <= vldInp and not r.eof;
       fifoDatInp <= datInp;
       rdyInpLoc  <= fifoRdyInp and not r.eof;
 
       if ( r.eof = '1' ) then
+         -- EOF handling; must wrap-up the last run-length
+         -- and emit an EOF character
          if ( hdrFifoSpace(v, 2) = '1' ) then
+            -- last block length
 	    hdrFifoPush( v, r.icnt );
             v.icnt := to_unsigned(1, v.icnt'length);
-	    hdrFifoPush( v, to_unsigned(0, v.icnt'length) );
+            -- emit an EOF; if the backend finds
+            -- this special run-length of zero then
+            -- they know they have to send it verbatim
+	    hdrFifoPush( v, EOF_CNT_C );
             v.eof := '0';
          end if;
       elsif ( (vldInp  = '1') ) then
@@ -216,6 +248,8 @@ begin
       end if;
    end process P_SEQ;
 
+   -- FIFO to store data until we have counted the run-length of the
+   -- next block.
    U_FIFO : entity work.COBSFifo
       generic map (
          LD_FIFO_DEPTH_G => LD_DAT_FIFO_DEPTH_G,
