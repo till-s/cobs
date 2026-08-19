@@ -1,4 +1,7 @@
-all: EOFTagTb COBSDecoderTb COBSEncoderTb
+
+PROGS=EOFTagTb COBSDecoderTb COBSEncoderTb
+
+all: $(PROGS)
 
 VPATH=../hdl
 
@@ -14,3 +17,6 @@ COBSEncoder.o: COBSFifo.o
 
 %Tb: %Tb.o
 	ghdl -e -o $@ $@
+
+clean:
+	$(RM) $(PROGS) *.o work-*
