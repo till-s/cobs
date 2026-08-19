@@ -3,6 +3,9 @@ use     ieee.std_logic_1164.all;
 use     ieee.numeric_std.all;
 
 entity COBSEncoder is
+   generic (
+      LD_FIFO_DEPTH_G : natural range 8 to 1000 := 8
+   );
    port (
       clk          : in  std_logic;
       rst          : in  std_logic;
@@ -23,21 +26,33 @@ architecture rtl of COBSEncoder is
    subtype Slv8Type  is std_logic_vector(7 downto 0);
    type    Slv8Array is array (natural range <>) of Slv8Type;
 
-   constant LD_FIFO_DEPTH_C : natural := 8;
+   type HdrType is record
+      cnt          : unsigned(7 downto 0);
+   end record HdrType;
+
+   constant HDR_INIT_C : HdrType := (
+      cnt          => (others => '0')
+   );
+
+   constant LD_HDR_FIFO_DEPTH_C : natural := 2;
+   subtype  HdrFifoIdxType      is signed(LD_HDR_FIFO_DEPTH_C downto 0);
+   type     HdrArrayType        is array(0 to 2**LD_HDR_FIFO_DEPTH_C -1) of HdrType;
 
    type RegType is record
       ocnt         : unsigned(7 downto 0);
       icnt         : unsigned(7 downto 0);
-      newCnt       : unsigned(7 downto 0);
-      vldNewCnt    : std_logic;
+      hdrs         : HdrArrayType;
+      hwptr        : HdrFifoIdxType;
+      hrptr        : HdrFifoIdxType;
       eof          : std_logic_vector(1 downto 0);
    end record RegType;
 
    constant REG_INIT_C      : RegType := (
       ocnt         => (others => '0'),
       icnt         => to_unsigned(1, 8),
-      newCnt       => (others => '0'),
-      vldNewCnt    => '0',
+      hdrs         => (others => HDR_INIT_C),
+      hwptr        => (others => '0'),
+      hrptr        => (others => '0'),
       eof          => "00"
    );
 
@@ -71,6 +86,38 @@ architecture rtl of COBSEncoder is
       if ( x ) then return t; else return f; end if;
    end function ite;
 
+   function hdrFifoEmpty(constant x : in RegType) return std_logic is
+   begin
+      return to_std_logic( x.hwptr = x.hrptr );
+   end function hdrFifoEmpty;
+
+   function hdrFifoFull(constant x : in RegType) return std_logic is
+   begin
+      return to_std_logic( x.hwptr - x.hrptr < 0 );
+   end function hdrFifoFull;
+
+
+   function hdrFifoHead(constant x : in RegType) return HdrType is
+   begin
+      return x.hdrs(to_integer(unsigned(x.hrptr(LD_HDR_FIFO_DEPTH_C - 1 downto 0))));
+   end function hdrFifoHead;
+
+   procedure hdrFifoPop(variable x : inout RegType) is
+   begin
+      x       := x;
+      x.hrptr := x.hrptr + 1;
+   end procedure hdrFifoPop;
+
+   procedure hdrFifoPush(variable x : inout RegType; constant v : in unsigned(7 downto 0)) is
+      variable nv : HdrType := HDR_INIT_C;
+   begin
+      x       := x;
+      nv.cnt  := v;
+      x.hdrs(to_integer(unsigned(x.hwptr(LD_HDR_FIFO_DEPTH_C - 1 downto 0)))) := nv;
+      x.hwptr := x.hwptr + 1;
+   end procedure hdrFifoPush;
+
+
 begin
 
    P_COMB : process ( r, fifoDatOut, fifoVldOut, fifoRdyOut, rdyOut, vldInp, datInp, fifoRdyInp, rdyInpLoc ) is
@@ -88,14 +135,14 @@ begin
 
          -- if mailbox data are valid, append ther run-length (or EOF marker
          -- if newCnt = 0
-         vldOut     <= r.vldNewCnt;
-         datOut     <= std_logic_vector( r.newCnt );
-         if ( (r.vldNewCnt and rdyOut) = '1' ) then
-            if ( r.newCnt /= 0 ) then
-               v.ocnt       := r.newCnt - 1;
+         vldOut     <= not hdrFifoEmpty(r);
+         datOut     <= std_logic_vector( hdrFifoHead(r).cnt );
+         if ( (not hdrFifoEmpty(r) and rdyOut) = '1' ) then
+            if ( hdrFifoHead(r).cnt /= 0 ) then
+               v.ocnt       := hdrFifoHead(r).cnt - 1;
             -- else the count can be left alone; is already 0
             end if;
-            v.vldNewCnt := '0';
+	    hdrFifoPop(v);
          end if;
       else
          fifoRdyOut <= rdyOut;
@@ -116,11 +163,10 @@ begin
             if ( (r.icnt = CHAIN_C) or (r.eof /= "00") ) then
                rdyInpLoc <= '0';
             else
-               rdyInpLoc <= not v.vldNewCnt;
+               rdyInpLoc <= not hdrFifoFull( v );
             end if;
-	    if ( v.vldNewCnt = '0' ) then
-               v.newCnt    := r.icnt;
-               v.vldNewCnt := '1';
+	    if ( hdrFifoFull( v ) = '0' ) then
+	       hdrFifoPush( v, r.icnt );
                v.icnt      := to_unsigned(1, v.icnt'length);
                -- Note: if lstInp is set when we consume a 00 byte then
                -- we already send the icnt to the mail box in this cycle
@@ -160,7 +206,7 @@ begin
 
    U_FIFO : entity work.COBSFifo
       generic map (
-         LD_FIFO_DEPTH_G => LD_FIFO_DEPTH_C,
+         LD_FIFO_DEPTH_G => LD_FIFO_DEPTH_G,
          DATA_WIDTH_G    => 8
       )
       port map (

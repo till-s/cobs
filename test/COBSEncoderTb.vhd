@@ -8,7 +8,11 @@ end entity COBSEncoderTb;
 
 architecture sim of COBSEncoderTb is
 
-   constant LOG_DBG_C       : boolean := false;
+   constant LOG_DBG_C           : boolean := false;
+   -- test max. throughput (watch waveform); normally we exercise flow control
+   -- using random delays.
+   constant THROUGHPUT_C        : boolean :=  true;
+   constant LD_ENC_FIFO_DEPTH_C : natural := 12;
 
    subtype Slv8Type  is std_logic_vector(7 downto 0);
    subtype Slv9Type  is std_logic_vector(8 downto 0);
@@ -641,7 +645,11 @@ begin
                ri          := to_unsigned(integer(floor(2.0**(ri'length)*r)), ri'length);
                vr          := signed(ri(ri'left downto ri'length - iVldRnd'length));
                vr(vr'left) := '0';
-               iVldRnd     <= vr - 1;
+               if ( THROUGHPUT_C ) then
+                  iVldRnd     <= (others => '1');
+               else
+                  iVldRnd     <= vr - 1;
+               end if;
                iDatRnd     <= std_logic_vector(ri(iDatRnd'range));
                fl          := fl + 1;
                if ( iLst = '1' ) then
@@ -747,7 +755,11 @@ begin
                uniform(s1, s2, r);
                vr          := signed(to_unsigned(integer(floor(2.0**vr'length*r)), vr'length));
                vr(vr'left) := '0';
-               oRdyRnd     <= vr - 1;
+               if ( THROUGHPUT_C ) then
+                  oRdyRnd <= (others => '1');
+               else
+                  oRdyRnd     <= vr - 1;
+               end if;
             elsif (oRdyRnd >= 0) then
                oRdyRnd <= oRdyRnd - 1;
             end if;
@@ -764,6 +776,9 @@ begin
    end process P_CHECK;
 
    U_DUT_E : entity work.COBSEncoder
+      generic map (
+         LD_FIFO_DEPTH_G => LD_ENC_FIFO_DEPTH_C
+      )
       port map (
          clk       => clk,
          rst       => '0',
