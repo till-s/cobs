@@ -8,11 +8,13 @@ end entity COBSEncoderTb;
 
 architecture sim of COBSEncoderTb is
 
-   constant LOG_DBG_C           : boolean := false;
+   constant LOG_DBG_C               : boolean  := false;
    -- test max. throughput (watch waveform); normally we exercise flow control
    -- using random delays.
-   constant THROUGHPUT_C        : boolean :=  true;
-   constant LD_ENC_FIFO_DEPTH_C : natural := 12;
+   constant THROUGHPUT_C            : boolean  := false;
+   constant LD_ENC_DAT_FIFO_DEPTH_C : positive := 8;
+   constant LD_ENC_HDR_FIFO_DEPTH_C : positive := 2;
+   constant RAND_NUM_FRAMES_C       : natural := 1000;
 
    subtype Slv8Type  is std_logic_vector(7 downto 0);
    subtype Slv9Type  is std_logic_vector(8 downto 0);
@@ -548,10 +550,12 @@ architecture sim of COBSEncoderTb is
    constant PHAS_WIPE_C     : integer := 0;
 
    signal phas              : integer   := PHAS_BASIC_C;
-   constant RAND_NUM_FRAMES_C : natural := 100;
    signal randNumFrames     : natural   := 0;
    signal randMinLen        : natural   := 1000000;
    signal randMaxLen        : natural   := 0;
+   signal notRdyCycles      : natural   := 0;
+   signal totCycles         : natural   := 0;
+   signal notVldCycles      : natural   := 0;
 
    signal iVld              : std_logic;
    signal iVldRnd           : signed(3  downto 0) := (others => '0');
@@ -732,6 +736,13 @@ begin
       variable vr : signed(oRdyRnd'range);
    begin
       if ( rising_edge(clk) ) then
+         totCycles <= totCycles + 1;
+         if ( (iVld and iRdy) = '0' ) then
+            notRdyCycles <= notRdyCycles + 1;
+         end if;
+         if ( (oVld and oRdy) = '0' ) then
+            notVldCycles <= notVldCycles + 1;
+         end if;
          if ( phas = PHAS_BASIC_C ) then
             if ( ( oVld and oRdy ) = '1' ) then
                assert oLst & oDat = FEED_C(cIdx) report "data mismatch" severity failure;
@@ -770,6 +781,12 @@ begin
                report "Min frame length: " & integer'image(randMinLen);
                report "Max frame length: " & integer'image(randMaxLen);
             end if;
+            if ( THROUGHPUT_C ) then
+               report "Input  stalled for " & integer'image(notRdyCycles) & "/" & integer'image(totCycles) & " cycles ("
+                     & real'image(100.0*real(notRdyCycles)/real(totCycles)) & "%)";
+               report "Output stalled for " & integer'image(notVldCycles) & "/" & integer'image(totCycles) & " cycles ("
+                     & real'image(100.0*real(notVldCycles)/real(totCycles)) & "%)";
+            end if;
             phas <= phas - 1;
          end if;
       end if;
@@ -777,7 +794,8 @@ begin
 
    U_DUT_E : entity work.COBSEncoder
       generic map (
-         LD_FIFO_DEPTH_G => LD_ENC_FIFO_DEPTH_C
+         LD_DAT_FIFO_DEPTH_G => LD_ENC_DAT_FIFO_DEPTH_C,
+         LD_HDR_FIFO_DEPTH_G => LD_ENC_HDR_FIFO_DEPTH_C
       )
       port map (
          clk       => clk,
