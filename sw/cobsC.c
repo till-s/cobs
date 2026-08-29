@@ -1,5 +1,14 @@
 #include <cobsC.h>
 
+#ifdef COBSC_TEST_RUN_MAX
+#define RUN_MAX  (COBSC_TEST_RUN_MAX)
+#else
+#define RUN_MAX  0xff
+#endif
+
+/* max segment size: header + 254 + EOF */
+#define SEG_MAX  256
+
 int
 cobsCEncode(CobsCEncoderCtx *ctx)
 {
@@ -30,7 +39,7 @@ cobsCEncode(CobsCEncoderCtx *ctx)
 
 	runLength  = ctx->srcRemain;
 
-	while ( dstp <= dstend ) {
+	while ( (dstp <= dstend) && (srcp < srcend) ) {
 		/* remember where to store next link
 		 *  - when a segment was ended by a EOF then this is the link field
 		 *    but runLength + dstp have already been incremented past the EOF
@@ -58,24 +67,21 @@ cobsCEncode(CobsCEncoderCtx *ctx)
 				if ( RUN_MAX == runLength ) {
 					/* need a new header */
 					runLength = 0;
-					/* might be a max-length run */
-					if ( srcp < srcend ) {
-						goto continue_outer_loop;
-					}
 					/* else fall through and break outer loop */
 				}
 				/* if runLength < RUN_MAX then source is surely exhausted */
-				goto break_outer_loop;
+				goto continue_outer_loop;
 			}
 		}
 		*lenp     = runLength;
 		runLength = 1;
 continue_outer_loop:
 	}
-break_outer_loop:
 	ctx->srcIndex  = srcp - ctx->src;
 	ctx->dstIndex  = dstp - ctx->dst;
 	ctx->srcRemain = runLength;
+	/* record the run-length */
+	*(dstp - runLength) = runLength;
 	if ( srcp < srcend ) {
 		/* strip the space that was reserved for the next link header */
 		ctx->dstIndex--;
@@ -85,5 +91,3 @@ break_outer_loop:
 	ctx->srcIndex = 0; /* prepare for new source */
 	return 1;
 }
-
-

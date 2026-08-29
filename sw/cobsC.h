@@ -10,10 +10,10 @@ extern "C" {
 
 typedef struct CobsCEncoderCtx {
 	uint8_t        *dst;
-    const size_t    dstSize;
+    size_t          dstSize;
     size_t          dstIndex;
 	const uint8_t  *src;
-    const size_t    srcSize;
+    size_t          srcSize;
     size_t          srcIndex;
 	size_t          srcRemain;
 } CobsCEncoderCtx;
@@ -41,7 +41,7 @@ cobsCEncodeRewind(CobsCEncoderCtx *ctx)
 }
 
 static inline void
-cobsCEncodeInitCtx(CobsCEncoderCtx *ctx)
+cobsCEncodeInit(CobsCEncoderCtx *ctx)
 {
 	/* buffers + sizes must be set by user */
 	cobsCEncodeRewind(ctx);
@@ -49,9 +49,6 @@ cobsCEncodeInitCtx(CobsCEncoderCtx *ctx)
 
 
 #define COBSC_EOF 0x00
-#define RUN_MAX  0xff
-/* max segment size: header + 254 + EOF */
-#define SEG_MAX  256
 
 /* Encode the 'src' buffer into the 'dst' buffer.
  * Encoding may stop either because the source is exhausted
@@ -80,7 +77,7 @@ cobsCEncodeInitCtx(CobsCEncoderCtx *ctx)
  *
  *     Using an 'iovec'-style array:
  *
- *         cobsCEncodeInitCtx(ctx);
+ *         cobsCEncodeInit(ctx);
  *         for ( n = 0; n < NUM_IOVS; ++n ) {
  *            ctx->src     = iov[n].buf;
  *            ctx->srcSize = iov[n].size;
