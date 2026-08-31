@@ -9,12 +9,35 @@
 using V = std::vector<uint8_t>;
 
 int
-vecCodecTest(const V &src, size_t encWin, size_t decWin)
+decodeSeg(CobsCDecoderCtx *dctx, size_t *premain)
+{
+	int rv = 0;
+	assert( *premain > 0 );
+
+	if ( *premain < dctx->dstSize ) {
+		dctx->dstSize = *premain;
+	}
+
+	while ( dctx->srcIndex < dctx->srcSize ) {
+		if ( cobsCDecode( dctx ) ) {
+			rv = 1;
+			break;
+		}
+		*premain      -= dctx->dstIndex;
+		dctx->dst     += dctx->dstIndex;
+		dctx->dstIndex = 0;
+	}
+	return 0;
+}
+
+void
+vecCodecTest(const V &src, size_t encWin, size_t bufsz, size_t decWin, const V *eexp)
 {
 	V dst;
-	V ebuf;
+	V buf;
+	V enc;
 	dst.resize(src.size());
-	ebuf.resize(encWin);
+	buf.resize(bufsz);
 
 	CobsCEncoderCtx ectx;
 	CobsCDecoderCtx dctx;
@@ -22,8 +45,59 @@ vecCodecTest(const V &src, size_t encWin, size_t decWin)
 	cobsCDecodeInit(&dctx);
 
 	ectx.src     = &src[0];
-	ectx.srcSize = 
+	ectx.srcSize = encWin;
+	ectx.dst     = &buf[0];
+	ectx.dstSize = bufsz;
 
+	dctx.src     = ectx.dst;
+	dctx.srcSize = ectx.dstSize;
+	dctx.dst     = &dst[0];
+	dctx.dstSize = decWin;
+
+	size_t eremain = src.size();
+	size_t dremain = dst.size();
+	bool   edone;
+	while ( eremain > 0 ) {
+		size_t lidx = 0;
+		while ( !  cobsCEncode( &ectx ) ) {
+			if ( eexp ) {
+				for ( auto k = 0; k < ectx.dstIndex; ++k  ) {
+					enc.push_back( ectx.dst[k] );
+				}
+			}
+			dctx.srcSize = ectx.dstIndex;
+
+			if ( decodeSeg( &dctx, &dremain ) ) {
+				goto all_done;
+			}
+
+			dctx.srcIndex = 0;
+			cobsCEncodeContinue(&ectx);
+		}
+		ectx.src += ectx.srcSize;
+		eremain  -= ectx.srcSize;
+		if ( eremain < ectx.srcSize ) {
+			ectx.srcSize = eremain;
+		}
+	}
+	if ( eexp ) {
+		for ( auto k = 0; k < ectx.dstIndex; ++k  ) {
+			enc.push_back( ectx.dst[k] );
+		}
+		printf("Total encoded length %zd, expected %zd\n", enc.size(), eexp->size());
+		assert( enc.size() == eexp->size() );
+		for ( int k = 0; k < enc.size(); ++k ) {
+			assert(enc[k] == (*eexp)[k]);
+		}
+	}
+
+	dctx.srcSize = ectx.dstIndex;
+	decodeSeg( &dctx, &dremain );
+	assert( dremain == 0 );
+all_done:
+	for ( int i = 0; i < src.size(); ++i ) {
+		assert(dst[i] == src[i]);
+	}
 }
 
 int
@@ -79,6 +153,8 @@ main(int argc, char **argv)
 			}
 		}
 	}
+
+	vecCodecTest(src, 100, 300, 100, &enc);
 
 	return 0;
 }

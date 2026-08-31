@@ -122,12 +122,12 @@ int cobsCDecode(CobsCDecoderCtx *ctx)
 			break;
 		}
 		if ( 0 == runLength ) {
-			printf("runlength = 0; replace was %i, new runLength %d\n", ctx->replace, val);
+			/*printf("runlength = 0; replace was %i, new runLength %d\n", ctx->replace, val); */
 			if ( ctx->replace ) {
 				*dstp++ = 0x00;
 			}
 			ctx->replace = (RUN_MAX != (runLength = val));
-			printf("replace now %i\n", ctx->replace);
+			/*printf("replace now %i\n", ctx->replace); */
 		} else {
 			*dstp++ = val;
 		}
@@ -137,4 +137,29 @@ int cobsCDecode(CobsCDecoderCtx *ctx)
 	ctx->dstIndex  = dstp - ctx->dst;
 	ctx->runLength = runLength;
 	return retVal;
+}
+
+int
+cobsCEncodeAddToFrame(CobsCEncoderCtx *ectx, const uint8_t *data, size_t size, int wrap, int (*flush)(const uint8_t *, size_t, void *closure), void *closure)
+{
+	int status = 0;;
+	if ( size ) {
+		ectx->src     = data;
+		ectx->srcSize = size;
+		while ( ! cobsCEncode( ectx ) ) {
+			if ( (status = flush( ectx->dst, ectx->dstIndex, closure )) ) {
+				return status;
+			}
+			cobsCEncodeContinue(ectx);
+		}
+	}
+	if ( wrap > 0 ) {
+		/* space is guaranteed */
+		cobsCEncodeAppendEOF(ectx);
+		if ( (status = flush( ectx->dst, ectx->dstIndex, closure )) ) {
+			return status;
+		}
+		cobsCEncodeRewind(ectx);
+	}
+	return status;
 }

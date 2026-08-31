@@ -8,6 +8,8 @@ extern "C" {
 #include <stddef.h>
 #include <assert.h>
 
+#define COBSC_EOF 0x00
+
 typedef struct CobsCEncoderCtx {
 	uint8_t        *dst;
     size_t          dstSize;
@@ -47,8 +49,42 @@ cobsCEncodeInit(CobsCEncoderCtx *ctx)
 	cobsCEncodeRewind(ctx);
 }
 
+/* The encoder ensures there is space to call this
+ * routine *once*; after that either cobsCEncode()
+ * must be called (to append more data) and/or the buffer
+ * flushed if cobsCEncode() returns zero or right away.
+ *
+ * e.g.,:
+ *
+ *    cobsCEncodeAppendEOF(&ctx);
+ *    flush( ctx.dst, ctx.dstIndex);
+ *    cobsCEncodeRewind(&ctx);
+ */
+static inline void
+cobsCEncodeAppendEOF(CobsCEncoderCtx *ctx)
+{
+	ctx->dst[ctx->dstIndex] = COBSC_EOF;
+	++ctx->dstIndex;
+	ctx->runLength = 0;
+}
 
-#define COBSC_EOF 0x00
+
+/* Convenience wrapper:
+ *   1. append more data (data,size) to a frame; routime may be
+ *      called multiple times (wrap == 0).
+ *   2. wrapup an exising frame; append EOF and send.
+ *
+ * 1. and 2. may be combined (size > 0, wrap != 0) or used
+ * separately (size or wrap may be zero).
+ */
+int
+cobsCEncodeAddToFrame(
+	CobsCEncoderCtx *ectx,
+	const uint8_t *data,
+	size_t size,
+	int wrap,
+	int (*flush)(const uint8_t *, size_t, void *closure),
+	void *closure);
 
 /* Encode the 'src' buffer into the 'dst' buffer.
  * Encoding may stop either because the source is exhausted

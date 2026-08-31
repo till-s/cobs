@@ -111,4 +111,7 @@ main(int argc, char **argv)
 
 	zer[0]=-1;
 	testMultiRun(256, 1000, zer);
+
+	printf("Test Passed\n");
+	return 0;
 }

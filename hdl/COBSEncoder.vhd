@@ -161,7 +161,7 @@ architecture rtl of COBSEncoder is
 
 begin
 
-   P_COMB : process ( r, fifoDatOut, fifoVldOut, fifoVldInp, fifoRdyOut, rdyOut, vldInp, lstInp, datInp, fifoRdyInp, rdyInpLoc, synReq ) is
+   P_COMB : process ( r, fifoDatOut, fifoVldOut, fifoVldInp, rdyOut, vldInp, lstInp, datInp, fifoRdyInp, rdyInpLoc, synReq ) is
       variable v                : RegType;
       variable hdrSpaceRequired : natural;
    begin
