@@ -1,5 +1,7 @@
 #include <cobsC.h>
 
+#include <stdio.h>
+
 #ifdef COBSC_TEST_RUN_MAX
 #define RUN_MAX  (COBSC_TEST_RUN_MAX)
 #else
@@ -37,9 +39,9 @@ cobsCEncode(CobsCEncoderCtx *ctx)
 		return 1;
 	}
 
-	runLength  = ctx->srcRemain;
+	runLength  = ctx->runLength;
 
-	while ( (dstp <= dstend) && (srcp < srcend) ) {
+	while ( (dstp - runLength <= dstend) && (srcp < srcend) ) {
 		/* remember where to store next link
 		 *  - when a segment was ended by a EOF then this is the link field
 		 *    but runLength + dstp have already been incremented past the EOF
@@ -79,15 +81,60 @@ continue_outer_loop:
 	}
 	ctx->srcIndex  = srcp - ctx->src;
 	ctx->dstIndex  = dstp - ctx->dst;
-	ctx->srcRemain = runLength;
+	ctx->runLength = runLength;
 	/* record the run-length */
 	*(dstp - runLength) = runLength;
 	if ( srcp < srcend ) {
-		/* strip the space that was reserved for the next link header */
-		ctx->dstIndex--;
+		/* strip the space that was reserved for the next link header (in
+		 * case the loop was broken due to *dst == COBSC_EOF)
+		 * NOTE: if srcp<srcend the runLength may only be 0 or 1
+		 * 'continue_outer_loop' can only be reached with runLength != 1 if
+		 * runLength >= runMax; if srcp<srcend then runLength must have been
+		 * RUN_MAX and subsequently => runLength = 0
+		 */
+		ctx->dstIndex -= runLength;
 		return 0;
 	}
 	/* srcp == srcend */
 	ctx->srcIndex = 0; /* prepare for new source */
 	return 1;
+}
+
+int cobsCDecode(CobsCDecoderCtx *ctx)
+{
+	const uint8_t *srcp;
+	uint8_t       *dstp;
+	const uint8_t *srcend;
+	uint8_t       *dstend;
+	uint8_t        val;
+	size_t         runLength;
+	int            retVal = 0;
+
+	srcp      = ctx->src + ctx->srcIndex;
+	dstp      = ctx->dst + ctx->dstIndex;
+	srcend    = ctx->src + ctx->srcSize;
+	dstend    = ctx->dst + ctx->dstSize;
+	runLength = ctx->runLength;
+
+	while ( srcp < srcend && dstp < dstend ) {
+		if ( COBSC_EOF == (val = *srcp++) ) {
+			retVal = 1;
+			break;
+		}
+		if ( 0 == runLength ) {
+			printf("runlength = 0; replace was %i, new runLength %d\n", ctx->replace, val);
+			if ( ctx->replace ) {
+				*dstp++ = 0x00;
+			}
+			ctx->replace = (RUN_MAX != (runLength = val));
+			printf("replace now %i\n", ctx->replace);
+		} else {
+			*dstp++ = val;
+		}
+		runLength--;
+	}
+	ctx->srcIndex  = srcp - ctx->src;
+	ctx->dstIndex  = dstp - ctx->dst;
+	ctx->runLength = runLength;
+	return retVal;
 }

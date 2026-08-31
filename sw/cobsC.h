@@ -15,21 +15,21 @@ typedef struct CobsCEncoderCtx {
 	const uint8_t  *src;
     size_t          srcSize;
     size_t          srcIndex;
-	size_t          srcRemain;
+	size_t          runLength;
 } CobsCEncoderCtx;
 
 static inline void
-cobsCEncodeContinue(CobsCEncoderCtx *ctx, int cont)
+cobsCEncodeContinue(CobsCEncoderCtx *ctx)
 {
-	assert( ctx->srcRemain < 2 );
+	assert( ctx->runLength < 2 );
 	/* continue/reposition after encoded buffer was flushed but
 	 * we want to keep encoding to the same frame; must have
-	 * flushed and srcRemain was 1 or 0.
+	 * flushed and runLength was 1 or 0.
 	 */
-	if ( 1 == ctx->srcRemain ) {
+	if ( 1 == ctx->runLength ) {
 		ctx->dst[0]   = 1;
 	}
-	ctx->dstIndex = ctx->srcRemain;
+	ctx->dstIndex = ctx->runLength;
 }
 
 static inline void
@@ -37,7 +37,7 @@ cobsCEncodeRewind(CobsCEncoderCtx *ctx)
 {
 	ctx->srcIndex  = 0;
 	ctx->dstIndex  = 0;
-	ctx->srcRemain = 0;
+	ctx->runLength = 0;
 }
 
 static inline void
@@ -89,17 +89,49 @@ cobsCEncodeInit(CobsCEncoderCtx *ctx)
  *         ctx->dst[ctx->dstIndex++] = COBSC_EOF;
  *         flush(ctx->dst, ctx->dstIndex);
  *         cobsCEncodeRewind(ctx);
- *
- * NOTE: if a protocol is guaranteed to always have frames <= 254
- *       then the buffer may be encoded 'in place' provided that
- *       there is space for a header byte:
- *         ctx->dst     = inPlaceBuffer;
- *         ctx->dstSize = 256;
- *         ctx->src     = inPlaceBuffer + 1;
- *         ctx->srcSize = 254;
  */
 
 int cobsCEncode(CobsCEncoderCtx *ctx);
+
+typedef struct CobsCDecoderCtx {
+	uint8_t        *dst;
+    size_t          dstSize;
+    size_t          dstIndex;
+	const uint8_t  *src;
+    size_t          srcSize;
+    size_t          srcIndex;
+	size_t          runLength;
+	int             replace;
+} CobsCDecoderCtx;
+
+static inline void
+cobsCDecodeContinue(CobsCDecoderCtx *ctx)
+{
+	ctx->srcIndex  = 0;
+	ctx->dstIndex  = 0;
+}
+
+static inline void
+cobsCDecodeRewind(CobsCDecoderCtx *ctx)
+{
+	ctx->srcIndex  = 0;
+	ctx->dstIndex  = 0;
+	ctx->runLength = 0;
+	ctx->replace   = 0;
+}
+
+static inline void
+cobsCDecodeInit(CobsCDecoderCtx *ctx)
+{
+	cobsCDecodeRewind(ctx);
+}
+
+/* Returns nonzero when a frame ends;
+ * otherwise the user has to check srcIndex and dstIndex
+ * to find out whether the source or destination (or both)
+ * are exhausted.
+ */
+int cobsCDecode(CobsCDecoderCtx *ctx);
 
 #ifdef __cplusplus
 }

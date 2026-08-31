@@ -21,16 +21,17 @@ static void testSingleRun(CobsCEncoderCtx *ctx, size_t sz, int zeroIdx)
 		zeroIdx = -1;
 	}
 	setup((uint8_t*)ctx->src, sz, zeroIdx);
+	memset(ctx->dst, 0x80, ctx->dstSize);
 	ctx->srcSize = sz;
 	cobsCEncodeRewind(ctx);
 	assert( cobsCEncode(ctx) );
 	assert( ctx->srcIndex == 0 );
 	assert( ctx->dstIndex == sz + 1 );
 	if ( zeroIdx >= 0 ) {
-		assert( ctx->srcRemain == ctx->dst[zeroIdx + 1] );
+		assert( ctx->runLength == ctx->dst[zeroIdx + 1] );
 		assert( ctx->dst[0] == zeroIdx + 1 );
 	} else {
-		assert( ctx->srcRemain == 254 == sz ? 0 : sz + 1 );
+		assert( ctx->runLength == 254 == sz ? 0 : sz + 1 );
 		assert( ctx->dst[0] == sz + 1 );
 	}
 	for ( i = 0; i < sz; ++i ) {
@@ -42,21 +43,72 @@ static void testSingleRun(CobsCEncoderCtx *ctx, size_t sz, int zeroIdx)
 	}
 }
 
+static void testMultiRun(size_t dstsz, size_t srcsz, int *zeros)
+{
+	uint8_t         dst[srcsz*2];
+	uint8_t         src[srcsz];
+	CobsCEncoderCtx ctx;
+	size_t          dstl, runl, i,k;
+	memset(dst, 0x80, srcsz*2);
+	memset(src, 0xfc, srcsz);
+	for ( i = 0; zeros[i] >= 0 && zeros[i] < srcsz; ++i ) {
+		src[zeros[i]] = 0x00;
+	}
+	cobsCEncodeInit(&ctx);
+	ctx.dst     = dst;
+	ctx.dstSize = dstsz;
+	ctx.src     = src;
+	ctx.srcSize = srcsz;
+	while ( ! cobsCEncode( &ctx ) ) {
+		ctx.dst += ctx.dstIndex;
+		cobsCEncodeContinue(&ctx);
+	}
+	dstl = ctx.dstIndex + (ctx.dst - dst);
+	runl = 0;
+	for ( i = k = 0; i < dstl; ++i ) {
+		if ( 0 == runl ) {
+			runl = dst[i];
+			assert( 0 != runl );
+		} else {
+			assert(0xfc == dst[i]);
+		}
+		runl--;
+	}
+}
+
 int
 main(int argc, char **argv)
 {
 	uint8_t dst[1024];
 	uint8_t src[1024];
+	int     zer[100];
 	CobsCEncoderCtx ctx;
 	cobsCEncodeInit(&ctx);
 	ctx.dst     = dst;
 	ctx.dstSize = sizeof(dst);
 	ctx.src     = src;
 	ctx.srcSize = sizeof(src);
+
 	testSingleRun(&ctx, 1, -1);
 	testSingleRun(&ctx, 1,  0);
 	testSingleRun(&ctx, 254, -1);
 	testSingleRun(&ctx, 254, 254);
 	testSingleRun(&ctx, 254, 0);
 	testSingleRun(&ctx, 254, 10);
+
+	ctx.dstSize = 256;
+
+	testSingleRun(&ctx, 1, -1);
+	testSingleRun(&ctx, 1,  0);
+	testSingleRun(&ctx, 254, -1);
+	testSingleRun(&ctx, 254, 254);
+
+	zer[0]=0; zer[1]=-1;
+	testMultiRun(256, 254, zer);
+
+	zer[0]=10; zer[1]=-1;
+	testMultiRun(256, 254, zer);
+
+	zer[0]=-1;
+	testMultiRun(256, 1000, zer);
 }
