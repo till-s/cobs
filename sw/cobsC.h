@@ -12,11 +12,11 @@ extern "C" {
 
 typedef struct CobsCEncoderCtx {
 	uint8_t        *dst;
-    size_t          dstSize;
-    size_t          dstIndex;
+	size_t          dstSize;
+	size_t          dstIndex;
 	const uint8_t  *src;
-    size_t          srcSize;
-    size_t          srcIndex;
+	size_t          srcSize;
+	size_t          srcIndex;
 	size_t          runLength;
 } CobsCEncoderCtx;
 
@@ -76,7 +76,17 @@ cobsCEncodeAppendEOF(CobsCEncoderCtx *ctx)
  *
  * 1. and 2. may be combined (size > 0, wrap != 0) or used
  * separately (size or wrap may be zero).
+ *
+ * If 'flush' returns a negative error this is propagated
+ * to the caller (leaving the context as it was before
+ * the flush was attempted).
+ *
+ * Note that the intermediate buffer ctx->dst/ctx->dstSize must
+ * be managed/provided by the caller.
  */
+
+#define COBSC_ENCODE_WRAP 1
+#define COBSC_ENCODE_NO_WRAP 0
 int
 cobsCEncodeAddToFrame(
 	CobsCEncoderCtx *ectx,
@@ -162,12 +172,39 @@ cobsCDecodeInit(CobsCDecoderCtx *ctx)
 	cobsCDecodeRewind(ctx);
 }
 
-/* Returns nonzero when a frame ends;
- * otherwise the user has to check srcIndex and dstIndex
- * to find out whether the source or destination (or both)
- * are exhausted.
+/* Returns:
+ *   1 when an EOF has been detected; the EOF is removed from
+ *     the source but not added to the destination.
+ *  -1 when no progress has been made (no source data consumed
+ *     due to lack of destination space).
+ *   0 otherwise the user has to check srcIndex and dstIndex
+ *     to find out whether the source or destination (or both)
+ *     are exhausted.
+ *
+ * Note that source data may be consumed even with no destination
+ * space available (e.g., to remove EOF or contination bytes).
  */
 int cobsCDecode(CobsCDecoderCtx *ctx);
+
+/*
+ * Decode a frame into a buffer (or continue doing so).
+ * An EOF condition can be detected by the routine returning
+ * a value greater than zero.
+ *
+ * If 'fill' fails with a negative error status then this status
+ * is propagated to the caller. 'ctx->dstIndex' reflects the
+ * amount of data already decoded.
+ *
+ * Note that the intermediate buffer ctx->src/ctx->srcSize must
+ * be managed/provided by the caller.
+ *
+ */
+int cobsCDecodeFromFrame(
+	CobsCDecoderCtx *ctx,
+	uint8_t *buf,
+	size_t size,
+	int fill(uint8_t *, size_t, void *closure),
+	void *closure);
 
 #ifdef __cplusplus
 }

@@ -1,12 +1,10 @@
 #include <cobsC.h>
 
+#include <string.h>
 #include <stdio.h>
+#include <errno.h>
 
-#ifdef COBSC_TEST_RUN_MAX
-#define RUN_MAX  (COBSC_TEST_RUN_MAX)
-#else
 #define RUN_MAX  0xff
-#endif
 
 /* max segment size: header + 254 + EOF */
 #define SEG_MAX  256
@@ -109,6 +107,7 @@ int cobsCDecode(CobsCDecoderCtx *ctx)
 	uint8_t        val;
 	size_t         runLength;
 	int            retVal = 0;
+	size_t         newIndex;
 
 	srcp      = ctx->src + ctx->srcIndex;
 	dstp      = ctx->dst + ctx->dstIndex;
@@ -116,7 +115,7 @@ int cobsCDecode(CobsCDecoderCtx *ctx)
 	dstend    = ctx->dst + ctx->dstSize;
 	runLength = ctx->runLength;
 
-	while ( srcp < srcend && dstp < dstend ) {
+	while ( srcp < srcend ) {
 		if ( COBSC_EOF == (val = *srcp++) ) {
 			retVal = 1;
 			break;
@@ -124,16 +123,31 @@ int cobsCDecode(CobsCDecoderCtx *ctx)
 		if ( 0 == runLength ) {
 			/*printf("runlength = 0; replace was %i, new runLength %d\n", ctx->replace, val); */
 			if ( ctx->replace ) {
+				if ( dstp >= dstend ) {
+					/* no space ! */
+					--srcp; /* don't consume! */
+					break;
+				}
 				*dstp++ = 0x00;
 			}
 			ctx->replace = (RUN_MAX != (runLength = val));
 			/*printf("replace now %i\n", ctx->replace); */
 		} else {
+			if ( dstp >= dstend ) {
+				/* no space ! */
+				--srcp; /* don't consume! */
+				break;
+			}
 			*dstp++ = val;
 		}
 		runLength--;
 	}
-	ctx->srcIndex  = srcp - ctx->src;
+	newIndex       = srcp - ctx->src;
+	if ( newIndex == ctx->srcIndex ) {
+		/* no progress */
+		retVal = -1;
+	}
+	ctx->srcIndex  = newIndex;
 	ctx->dstIndex  = dstp - ctx->dst;
 	ctx->runLength = runLength;
 	return retVal;
@@ -153,13 +167,68 @@ cobsCEncodeAddToFrame(CobsCEncoderCtx *ectx, const uint8_t *data, size_t size, i
 			cobsCEncodeContinue(ectx);
 		}
 	}
-	if ( wrap > 0 ) {
+	if ( wrap ) {
 		/* space is guaranteed */
 		cobsCEncodeAppendEOF(ectx);
 		if ( (status = flush( ectx->dst, ectx->dstIndex, closure )) ) {
+			/* remove EOF; i.e., leave state as it was if flush fails */
+			ectx->dstIndex--;
 			return status;
 		}
 		cobsCEncodeRewind(ectx);
 	}
 	return status;
+}
+
+int cobsCDecodeFromFrame(
+	CobsCDecoderCtx *ctx,
+	uint8_t *buf,
+	size_t size,
+	int fill(uint8_t *, size_t, void *closure),
+	void *closure)
+{
+	int           status;
+	int           eof = 0;
+	size_t        remainingContent, origSrcSize;
+
+	ctx->dst      = buf;
+	ctx->dstSize  = size;
+	ctx->dstIndex = 0;
+	if ( 0 == ctx->srcSize ) {
+		return -ENOSPC;
+	}
+	origSrcSize = ctx->srcSize;
+	while ( ! eof ) {
+		if ( ctx->srcIndex == ctx->srcSize ) {
+			status = fill((uint8_t*)ctx->src, origSrcSize, closure);
+			if ( status <= 0 ) {
+				ctx->srcSize  = origSrcSize;
+				ctx->srcIndex = origSrcSize;
+				if ( 0 == status ) {
+					status = -EIO;
+				}
+				return status;
+			}
+			ctx->srcSize  = status;
+			ctx->srcIndex = 0;
+		}
+		status = cobsCDecode(ctx);
+		eof    = (status > 0);
+		if ( status ) {
+			/* either no progress or EOF */
+			break;
+		}
+	}
+
+	remainingContent = ctx->srcSize - ctx->srcIndex;
+	if ( remainingContent ) {
+		/* must move buffer content in order to restore original srcSize */
+		ctx->srcIndex = origSrcSize - remainingContent;
+		memmove((void*)ctx->src, ctx->src + ctx->srcIndex, remainingContent);
+	} else {
+		ctx->srcIndex = origSrcSize;
+	}
+	ctx->srcSize = origSrcSize;
+
+	return eof;
 }

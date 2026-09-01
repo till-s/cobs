@@ -1,33 +1,59 @@
+#include <cobsC.h>
+
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
-#include <cobsC.h>
 
 #undef   NDEBUG
 #include <assert.h>
 
 using V = std::vector<uint8_t>;
 
+struct DecoderFlusher {
+	V               *enc;
+	CobsCDecoderCtx *dctx;
+	size_t          *premain;
+
+	DecoderFlusher(CobsCDecoderCtx *c, size_t *p, V *v) : enc(v), dctx(c), premain(p) {}
+};
+
 int
-decodeSeg(CobsCDecoderCtx *dctx, size_t *premain)
+decodeSeg(DecoderFlusher *d)
 {
 	int rv = 0;
-	assert( *premain > 0 );
+	CobsCDecoderCtx *dctx = d->dctx;
 
-	if ( *premain < dctx->dstSize ) {
-		dctx->dstSize = *premain;
+	if ( *d->premain < dctx->dstSize ) {
+		dctx->dstSize = *d->premain;
 	}
 
-	while ( dctx->srcIndex < dctx->srcSize ) {
-		if ( cobsCDecode( dctx ) ) {
+	while ( !rv && dctx->srcIndex < dctx->srcSize ) {
+		assert( *d->premain > 0 );
+		if ( cobsCDecode( dctx ) > 0 ) {
 			rv = 1;
-			break;
 		}
-		*premain      -= dctx->dstIndex;
-		dctx->dst     += dctx->dstIndex;
-		dctx->dstIndex = 0;
+		*d->premain      -= dctx->dstIndex;
+		dctx->dst        += dctx->dstIndex;
+		dctx->dstIndex    = 0;
 	}
 	return 0;
+}
+
+int
+decodeFlush(const uint8_t *buf, size_t bufsz, void *closure)
+{
+DecoderFlusher *d = static_cast<DecoderFlusher*>(closure);
+	if ( d->enc ) {
+		for ( auto k = 0; k < bufsz; ++k  ) {
+			d->enc->push_back( buf[k] );
+		}
+	}
+	d->dctx->src      = buf;
+	d->dctx->srcSize  = bufsz;
+	d->dctx->srcIndex = 0;
+
+	return decodeSeg( d );
 }
 
 void
@@ -57,33 +83,23 @@ vecCodecTest(const V &src, size_t encWin, size_t bufsz, size_t decWin, const V *
 	size_t eremain = src.size();
 	size_t dremain = dst.size();
 	bool   edone;
+	DecoderFlusher flushData(&dctx, &dremain, &enc);
 	while ( eremain > 0 ) {
-		size_t lidx = 0;
-		while ( !  cobsCEncode( &ectx ) ) {
-			if ( eexp ) {
-				for ( auto k = 0; k < ectx.dstIndex; ++k  ) {
-					enc.push_back( ectx.dst[k] );
-				}
-			}
-			dctx.srcSize = ectx.dstIndex;
-
-			if ( decodeSeg( &dctx, &dremain ) ) {
-				goto all_done;
-			}
-
-			dctx.srcIndex = 0;
-			cobsCEncodeContinue(&ectx);
-		}
+		cobsCEncodeAddToFrame( &ectx, ectx.src, ectx.srcSize, COBSC_ENCODE_NO_WRAP, decodeFlush, &flushData );
 		ectx.src += ectx.srcSize;
 		eremain  -= ectx.srcSize;
 		if ( eremain < ectx.srcSize ) {
 			ectx.srcSize = eremain;
 		}
 	}
+
+	cobsCEncodeAddToFrame( &ectx, nullptr, 0, COBSC_ENCODE_WRAP, decodeFlush, &flushData );
+
 	if ( eexp ) {
-		for ( auto k = 0; k < ectx.dstIndex; ++k  ) {
-			enc.push_back( ectx.dst[k] );
-		}
+
+//		for ( auto k = 0; k < ectx.dstIndex; ++k  ) {
+//			enc.push_back( ectx.dst[k] );
+//		}
 		printf("Total encoded length %zd, expected %zd\n", enc.size(), eexp->size());
 		assert( enc.size() == eexp->size() );
 		for ( int k = 0; k < enc.size(); ++k ) {
@@ -91,13 +107,43 @@ vecCodecTest(const V &src, size_t encWin, size_t bufsz, size_t decWin, const V *
 		}
 	}
 
-	dctx.srcSize = ectx.dstIndex;
-	decodeSeg( &dctx, &dremain );
+
+	//decodeFlush( ectx.dst, ectx.dstIndex,  &flushData );
+
 	assert( dremain == 0 );
 all_done:
 	for ( int i = 0; i < src.size(); ++i ) {
 		assert(dst[i] == src[i]);
 	}
+}
+
+struct FillerData {
+	V      *v;
+	size_t idx {0};
+	FillerData(V *v) : v(v) {}
+};
+
+int
+filler(uint8_t *data, size_t size, void *closure)
+{
+	FillerData *d = static_cast<FillerData*>(closure);
+	size_t rem = d->v->size() - d->idx;
+	if ( rem > 0 ) {
+		size_t s = (*d->v)[d->idx];
+		if ( s == 0 ) {
+			s = 33;
+		}
+		if ( s > size ) {
+			s = size;
+		}
+		if ( s > rem ) {
+			s = rem;
+		}
+		memcpy(data, &(*d->v)[d->idx], s);
+		d->idx += s;
+		return s;
+	}
+	return 0;
 }
 
 int
@@ -146,6 +192,7 @@ main(int argc, char **argv)
 	int e = src.size();
 	for ( int i = 0; i < e; ++i ) {
 		printf("0x%04x 0x%02x - 0x%02x - 0x%02x\n", i, src[i], dst[i], enc[i]);
+		assert( src[i] == dst[i] );
 		if ( src[i] != dst[i] ) {
 			printf("Mismatch @ %d\n", i);
 			if ( e == src.size() ) {
@@ -154,8 +201,22 @@ main(int argc, char **argv)
 		}
 	}
 
+	enc.push_back(COBSC_EOF);
 	vecCodecTest(src, 100, 300, 100, &enc);
 
+	memset(&dst[0],0x33,dst.size());
+	cobsCDecodeInit( &dctx );
+	dctx.srcIndex = dctx.srcSize;
+	FillerData fd(&enc);
+	int decStatus = cobsCDecodeFromFrame(&dctx, &dst[0], dst.size(), filler, &fd);
+	for (auto i=0; i < dst.size(); ++i) {
+		assert( dst[i] == src[i] );
+	}
+	assert( decStatus > 0 );
+	assert( dctx.dstIndex == dctx.dstSize );
+	assert( dctx.dstIndex == dst.size()   );
+
+	printf("Test Passed\n");
 	return 0;
 }
 
