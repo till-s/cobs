@@ -39,6 +39,7 @@ entity COBSDecoder is
 
       datOut       : out std_logic_vector(7 downto 0);
       vldOut       : out std_logic;
+      eofOut       : out std_logic;
       lstOut       : out std_logic;
       rdyOut       : in  std_logic
    );
@@ -52,6 +53,7 @@ architecture rtl of COBSDecoder is
       dat          : std_logic_vector(7 downto 0);
       notEmpty     : std_logic;
       vld          : std_logic;
+      eof          : std_logic;
       lst          : std_logic;
    end record RegType;
 
@@ -61,6 +63,7 @@ architecture rtl of COBSDecoder is
       dat          => (others => '0'),
       notEmpty     => '0',
       vld          => '0',
+      eof          => '0',
       lst          => '0'
    );
 
@@ -93,6 +96,8 @@ begin
 	 v.lst := '0';
       end if;
 
+      v.eof    := '0';
+
       rdyInp <= not v.vld;
 
       if ( (vldInp and not v.vld) = '1' ) then
@@ -104,6 +109,7 @@ begin
             v.notEmpty := '0';
             v.vld      := r.notEmpty;
 	    v.lst      := r.notEmpty;
+	    v.eof      := '1';
          elsif ( r.cnt = 0 ) then
             v.vld      := r.sendZero;
             if ( datInp = CHAIN_C ) then
@@ -153,5 +159,6 @@ begin
       );
 
    datOut    <= stitchOut(8 downto 1);
+   eofOut    <= r.eof;
 
 end architecture rtl;
