@@ -108,7 +108,7 @@ cobsCEncodeAddToFrame(
  *  1. if the destination was full then flush the destination
  *     buffer to the transmitter and 'continue' the encoder state:
  *
- *         while ( ! cobsCEncode(ctx)0 ) {
+ *         while ( ! cobsCEncode(ctx) ) {
  *            flush(ctx->dst, cts->dstIndex);
  *            cobsCEncodeContinue(ctx);
  *         }

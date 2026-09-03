@@ -94,7 +94,7 @@ continue_outer_loop:
 		return 0;
 	}
 	/* srcp == srcend */
-	ctx->srcIndex = 0; /* prepare for new source */
+	/* ctx->srcIndex = 0; prepare for new source */
 	return 1;
 }
 
@@ -158,8 +158,9 @@ cobsCEncodeAddToFrame(CobsCEncoderCtx *ectx, const uint8_t *data, size_t size, i
 {
 	int status = 0;;
 	if ( size ) {
-		ectx->src     = data;
-		ectx->srcSize = size;
+		ectx->src      = data;
+		ectx->srcIndex = 0;
+		ectx->srcSize  = size;
 		while ( ! cobsCEncode( ectx ) ) {
 			if ( (status = flush( ectx->dst, ectx->dstIndex, closure )) ) {
 				return status;

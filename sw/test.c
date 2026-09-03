@@ -25,7 +25,7 @@ static void testSingleRun(CobsCEncoderCtx *ctx, size_t sz, int zeroIdx)
 	ctx->srcSize = sz;
 	cobsCEncodeRewind(ctx);
 	assert( cobsCEncode(ctx) );
-	assert( ctx->srcIndex == 0 );
+	assert( ctx->srcIndex == ctx->srcSize );
 	assert( ctx->dstIndex == sz + 1 );
 	if ( zeroIdx >= 0 ) {
 		assert( ctx->runLength == ctx->dst[zeroIdx + 1] );
