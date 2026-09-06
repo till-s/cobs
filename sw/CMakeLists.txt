@@ -24,22 +24,13 @@
 # 
 # *LE-MIT*/
 
-PROGS=test rtest
+cmake_minimum_required(VERSION 3.10)
 
-CFLAGS+=-I. -g
+project( cobsC LANGUAGES C )
 
-all: $(PROGS)
+set( cobsC_SOURCES cobsC.c )
 
-test.o cobsC.o rtest.o: cobsC.h
+add_library( cobsC_objs OBJECT ${cobsC_SOURCES} )
+# use objects with $<TARGET_OBJECTS:cobsC>
+add_library( cobsC $<TARGET_OBJECTS:cobsC_objs> )
 
-%.o: %.cc
-	$(CXX) -c $(CFLAGS) $<
-
-%.o: %.c
-	$(CC) -c $(CFLAGS) $<
-
-$(PROGS):%:%.o cobsC.o
-	$(CXX) -o $@ $(CFLAGS) $^
-
-clean:
-	$(RM) *.o $(PROGS)
