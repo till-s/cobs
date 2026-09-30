@@ -102,6 +102,9 @@ cobsCEncode(CobsCEncoderCtx *ctx)
 		*lenp     = runLength;
 		runLength = 1;
 continue_outer_loop:
+		if ( 0 ) {
+			/* empty statement to avoid 'label at end of compound statement' warning */
+		}
 	}
 	ctx->srcIndex  = srcp - ctx->src;
 	ctx->dstIndex  = dstp - ctx->dst;
