@@ -201,7 +201,7 @@ begin
                -- The count can be left alone; is already 0
                v.inhibitSync := '0';
             end if;
-	    hdrFifoPop(v);
+            hdrFifoPop(v);
          end if;
       else
          -- transfer ocnt items from the data fifo
@@ -227,12 +227,12 @@ begin
          -- and emit an EOF character
          if ( hdrFifoSpace(v, 2) = '1' ) then
             -- last block length
-	    hdrFifoPush( v, r.icnt );
+            hdrFifoPush( v, r.icnt );
             v.icnt := to_unsigned(1, v.icnt'length);
             -- emit an EOF; if the backend finds
             -- this special run-length of zero then
             -- they know they have to send it verbatim
-	    hdrFifoPush( v, EOF_CNT_C );
+            hdrFifoPush( v, EOF_CNT_C );
             v.eof := '0';
          end if;
       elsif ( (vldInp  = '1') ) then
@@ -246,7 +246,7 @@ begin
             rdyInpLoc <= to_std_logic( r.icnt /= CHAIN_C );
 
             if ( hdrFifoFull(v) = '0' ) then
-	       hdrFifoPush( v, r.icnt );
+               hdrFifoPush( v, r.icnt );
                v.icnt    := to_unsigned(1, v.icnt'length);
             else
                -- no space in header fifo; dont' consume EOF and wait

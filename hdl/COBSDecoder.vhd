@@ -93,7 +93,7 @@ begin
 
       if ( (r.vld and rdyOutLoc) = '1' ) then
          v.vld := '0';
-	 v.lst := '0';
+         v.lst := '0';
       end if;
 
       v.eof    := '0';
@@ -101,15 +101,15 @@ begin
       rdyInp <= not v.vld;
 
       if ( (vldInp and not v.vld) = '1' ) then
-	 v.dat := datInp;
-	 v.vld := '1';
+         v.dat := datInp;
+         v.vld := '1';
          if ( datInp = EOF_C ) then
             v.cnt      := (others => '0');
             v.sendZero := '0';
             v.notEmpty := '0';
             v.vld      := r.notEmpty;
-	    v.lst      := r.notEmpty;
-	    v.eof      := '1';
+            v.lst      := r.notEmpty;
+            v.eof      := '1';
          elsif ( r.cnt = 0 ) then
             v.vld      := r.sendZero;
             if ( datInp = CHAIN_C ) then

@@ -68,18 +68,18 @@ begin
    P_MEM_RD : process ( clk ) is
    begin
       if ( rising_edge( clk ) ) then
-	 if ( memoryRen = '1' ) then
+         if ( memoryRen = '1' ) then
             datOut <= memory( to_integer(unsigned(rptr(LD_FIFO_DEPTH_G - 1 downto 0))) );
-	 end if;
+         end if;
       end if;
    end process P_MEM_RD;
 
    P_MEM_WR : process ( clk ) is
    begin
       if ( rising_edge( clk ) ) then
-	 if ( memoryWen = '1' ) then
+         if ( memoryWen = '1' ) then
             memory( to_integer(unsigned(wptr(LD_FIFO_DEPTH_G - 1 downto 0))) ) := datInp;
-	 end if;
+         end if;
       end if;
    end process P_MEM_WR;
 
