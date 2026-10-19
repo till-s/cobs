@@ -25,7 +25,7 @@
 #LE-MIT
 
 
-PROGS=EOFTagTb COBSDecoderTb COBSEncoderTb
+PROGS=EOFTagTb CobsDecoderTb CobsEncoderTb
 
 all: $(PROGS)
 
@@ -36,10 +36,10 @@ VPATH=../hdl
 
 EOFTagTb.o: EOFTag.o
 
-COBSEncoderTb.o: COBSDecoder.o COBSEncoder.o COBSFifo.o
-COBSDecoderTb.o: COBSDecoder.o
-COBSDecoder.o: EOFTag.o
-COBSEncoder.o: COBSFifo.o
+CobsEncoderTb.o: CobsDecoder.o CobsEncoder.o CobsFifo.o
+CobsDecoderTb.o: CobsDecoder.o
+CobsDecoder.o: EOFTag.o
+CobsEncoder.o: CobsFifo.o
 
 %Tb: %Tb.o
 	ghdl -e -o $@ $@

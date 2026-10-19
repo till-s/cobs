@@ -29,10 +29,10 @@ use     ieee.std_logic_1164.all;
 use     ieee.numeric_std.all;
 use     ieee.math_real.all;
 
-entity COBSEncoderTb is
-end entity COBSEncoderTb;
+entity CobsEncoderTb is
+end entity CobsEncoderTb;
 
-architecture sim of COBSEncoderTb is
+architecture sim of CobsEncoderTb is
 
    constant LOG_DBG_C               : boolean  := false;
    -- test max. throughput (watch waveform); normally we exercise flow control
@@ -818,7 +818,7 @@ begin
       end if;
    end process P_CHECK;
 
-   U_DUT_E : entity work.COBSEncoder
+   U_DUT_E : entity work.CobsEncoder
       generic map (
          LD_DAT_FIFO_DEPTH_G => LD_ENC_DAT_FIFO_DEPTH_C,
          LD_HDR_FIFO_DEPTH_G => LD_ENC_HDR_FIFO_DEPTH_C
@@ -835,7 +835,7 @@ begin
          rdyOut    => eRdy
       );
 
-   U_DUT_D : entity work.COBSDecoder
+   U_DUT_D : entity work.CobsDecoder
       port map (
          clk       => clk,
          rst       => '0',
@@ -848,7 +848,7 @@ begin
          lstOut    => oLst
       );
 
-   U_RND_FIFO : entity work.COBSFifo
+   U_RND_FIFO : entity work.CobsFifo
       generic map (
          LD_FIFO_DEPTH_G => 9,
          DATA_WIDTH_G    => fifoDatInp'length

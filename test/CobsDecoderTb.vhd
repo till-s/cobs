@@ -28,10 +28,10 @@ library ieee;
 use     ieee.std_logic_1164.all;
 use     ieee.numeric_std.all;
 
-entity COBSDecoderTb is
-end entity COBSDecoderTb;
+entity CobsDecoderTb is
+end entity CobsDecoderTb;
 
-architecture sim of COBSDecoderTb is
+architecture sim of CobsDecoderTb is
    subtype Slv8Type  is std_logic_vector(7 downto 0);
    subtype Slv9Type  is std_logic_vector(8 downto 0);
    type    Slv8Array is array(natural range <>) of Slv8Type;
@@ -364,7 +364,7 @@ begin
       wait;
    end process P_CTL;
 
-   U_DUT : entity work.COBSDecoder
+   U_DUT : entity work.CobsDecoder
       port map (
          clk       => clk,
          rst       => '0',

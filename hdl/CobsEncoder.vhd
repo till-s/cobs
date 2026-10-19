@@ -28,7 +28,7 @@ library ieee;
 use     ieee.std_logic_1164.all;
 use     ieee.numeric_std.all;
 
-entity COBSEncoder is
+entity CobsEncoder is
    generic (
       LD_DAT_FIFO_DEPTH_G : positive range 8 to 1000 := 8;
       -- increasing header depth slightly increases throughput
@@ -55,9 +55,9 @@ entity COBSEncoder is
       vldOut       : out std_logic;
       rdyOut       : in  std_logic
    );
-end entity COBSEncoder;
+end entity CobsEncoder;
 
-architecture rtl of COBSEncoder is
+architecture rtl of CobsEncoder is
 
    subtype Slv8Type  is std_logic_vector(7 downto 0);
    type    Slv8Array is array (natural range <>) of Slv8Type;
@@ -276,7 +276,7 @@ begin
 
    -- FIFO to store data until we have counted the run-length of the
    -- next block.
-   U_FIFO : entity work.COBSFifo
+   U_FIFO : entity work.CobsFifo
       generic map (
          LD_FIFO_DEPTH_G => LD_DAT_FIFO_DEPTH_G,
          DATA_WIDTH_G    => 8

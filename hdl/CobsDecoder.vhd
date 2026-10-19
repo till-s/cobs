@@ -28,7 +28,7 @@ library ieee;
 use     ieee.std_logic_1164.all;
 use     ieee.numeric_std.all;
 
-entity COBSDecoder is
+entity CobsDecoder is
    port (
       clk          : in  std_logic;
       rst          : in  std_logic;
@@ -43,9 +43,9 @@ entity COBSDecoder is
       lstOut       : out std_logic;
       rdyOut       : in  std_logic
    );
-end entity COBSDecoder;
+end entity CobsDecoder;
 
-architecture rtl of COBSDecoder is
+architecture rtl of CobsDecoder is
 
    type RegType is record
       cnt          : unsigned(7 downto 0);

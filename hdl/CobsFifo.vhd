@@ -28,7 +28,7 @@ library ieee;
 use     ieee.std_logic_1164.all;
 use     ieee.numeric_std.all;
 
-entity COBSFifo is
+entity CobsFifo is
    generic (
       LD_FIFO_DEPTH_G : natural;
       DATA_WIDTH_G    : natural := 8
@@ -45,9 +45,9 @@ entity COBSFifo is
       rdEna           : in  std_logic;
       empty           : out std_logic
    );
-end entity COBSFifo;
+end entity CobsFifo;
 
-architecture rtl of COBSFifo is
+architecture rtl of CobsFifo is
 
    subtype SlvType  is std_logic_vector(DATA_WIDTH_G - 1 downto 0);
    type    SlvArray is array (natural range <>) of SlvType;
